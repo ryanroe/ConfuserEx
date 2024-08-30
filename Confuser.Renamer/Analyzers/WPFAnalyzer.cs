@@ -69,7 +69,6 @@ namespace Confuser.Renamer.Analyzers {
 						var decodedFileName = decodedName.Substring(decodedLastSlash);
 						var encodedFileName = encodedName.Substring(encodedLastSlash);
 
-
 						var fileName = service.RandomName(renameMode).ToLowerInvariant();
 						if (decodedName.EndsWith(".BAML", StringComparison.OrdinalIgnoreCase))
 							fileName += ".baml";
