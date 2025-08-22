@@ -17,6 +17,9 @@ namespace Confuser.Renamer {
 		Sequential = 0x11,
 		Reversible = 0x12,
 
+		/// <summary>Use meaningful words from configuration to create natural-looking names.</summary>
+		MeaningfulWords = 0x13,
+
 		/// <summary>Add a underscore to the name to mark that it would be renamed.</summary>
 		Debug = 0x20,
 
