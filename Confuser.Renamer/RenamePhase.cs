@@ -76,11 +76,11 @@ namespace Confuser.Renamer {
 						typeDef.Namespace = service.ObfuscateName(nsFormat, typeDef.Namespace, mode);
 					}
 					typeDef.Name = service.ObfuscateName(typeDef, mode);
-					RenameGenericParameters(typeDef.GenericParameters);
+					RenameGenericParameters(typeDef.GenericParameters, service, mode);
 				}
 				else if (def is MethodDef methodDef) {
 					methodDef.Name = service.ObfuscateName(methodDef, mode);
-					RenameGenericParameters(methodDef.GenericParameters);
+					RenameGenericParameters(methodDef.GenericParameters, service, mode);
 				}
 				else
 					def.Name = service.ObfuscateName(def, mode);
@@ -108,10 +108,17 @@ namespace Confuser.Renamer {
 			}
 		}
 
-		static void RenameGenericParameters(IList<GenericParam> genericParams)
-		{
-			foreach (var param in genericParams)
-				param.Name = ((char) (param.Number + 1)).ToString();
+		static void RenameGenericParameters(IList<GenericParam> genericParams, INameService service, RenameMode mode) {
+			foreach (var param in genericParams) {
+				if (mode == RenameMode.MeaningfulWords) {
+					// Use meaningful names for generic type parameters when in MeaningfulWords mode
+					param.Name = service.ObfuscateName(param.Name ?? $"T{param.Number}", mode);
+				}
+				else {
+					// Use the original single character naming for other modes
+					param.Name = ((char)(param.Number + 1)).ToString();
+				}
+			}
 		}
 
 		static IEnumerable<IDnlibDef> GetTargetsWithDelay(IList<IDnlibDef> definitions, ConfuserContext context, INameService service) {

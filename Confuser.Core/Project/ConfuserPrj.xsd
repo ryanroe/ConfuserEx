@@ -23,9 +23,94 @@
     </xs:restriction>
   </xs:simpleType>
 
+  <xs:simpleType name="renameMode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Unicode" />
+      <xs:enumeration value="ASCII" />
+      <xs:enumeration value="Letters" />
+      <xs:enumeration value="Debug" />
+      <xs:enumeration value="Retain" />
+      <xs:enumeration value="Sequential" />
+      <xs:enumeration value="Reversible" />
+      <xs:enumeration value="MeaningfulWords" />
+    </xs:restriction>
+  </xs:simpleType>
+
   <xs:complexType name="argument">
+    <xs:choice minOccurs="0" maxOccurs="1">
+      <xs:element name="meaningfulWords" type="meaningfulWordsType" />
+    </xs:choice>
     <xs:attribute name="name" type="xs:string" use="required" />
-    <xs:attribute name="value" type="xs:string" use="required" />
+    <xs:attribute name="value" type="xs:string" use="optional" />
+  </xs:complexType>
+
+  <!-- Meaningful Words Configuration Schema -->
+  <!-- 
+    The meaningfulWords configuration allows you to specify custom word lists and patterns
+    for generating more natural-looking obfuscated names instead of random characters.
+    
+    Patterns now support flexible combinations of word categories separated by commas, plus signs, pipes, or semicolons.
+    
+    Example usage:
+    <argument name="meaningfulWords">
+      <meaningfulWords useNumbers='true' maxLength='20' minLength='3'>
+        <patterns>
+          <pattern value='Noun' />
+          <pattern value='Adjective,Noun' />
+          <pattern value='Verb,Noun' />
+          <pattern value='Verb,Adverb,Noun' />
+          <pattern value='Adjective,Verb,Noun' />
+        </patterns>
+        <words>
+          <noun><word>System</word><word>Manager</word></noun>
+          <verb><word>Handle</word><word>Process</word></verb>
+          <adjective><word>Fast</word><word>Smart</word></adjective>
+          <adverb><word>Quickly</word><word>Safely</word></adverb>
+        </words>
+      </meaningfulWords>
+    </argument>
+  -->
+  <xs:complexType name="meaningfulWordsType">
+    <xs:sequence>
+      <xs:element name="patterns" type="patternsType" minOccurs="0" maxOccurs="1" />
+      <xs:element name="words" type="wordsType" minOccurs="0" maxOccurs="1" />
+    </xs:sequence>
+    <xs:attribute name="useNumbers" type="xs:boolean" default="false" />
+    <xs:attribute name="maxLength" type="xs:positiveInteger" default="50" />
+    <xs:attribute name="minLength" type="xs:positiveInteger" default="3" />
+  </xs:complexType>
+
+  <xs:complexType name="patternsType">
+    <xs:sequence>
+      <xs:element name="pattern" type="patternType" minOccurs="1" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="patternType">
+    <xs:attribute name="value" type="wordPatternString" use="required" />
+  </xs:complexType>
+
+  <xs:simpleType name="wordPatternString">
+    <xs:restriction base="xs:string">
+      <!-- Pattern format: WordCategory names separated by commas, plus signs, pipes, or semicolons -->
+      <!-- Examples: "Noun", "Adjective,Noun", "Verb,Adverb,Noun", "Adjective+Verb+Noun" -->
+      <xs:pattern value="[A-Za-z]+([,+|;][A-Za-z]+)*" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="wordsType">
+    <xs:sequence>
+      <xs:element name="noun" type="wordListType" minOccurs="0" maxOccurs="1" />
+      <xs:element name="verb" type="wordListType" minOccurs="0" maxOccurs="1" />
+      <xs:element name="adjective" type="wordListType" minOccurs="0" maxOccurs="1" />
+      <xs:element name="adverb" type="wordListType" minOccurs="0" maxOccurs="1" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="wordListType">
+    <xs:sequence>
+      <xs:element name="word" type="xs:string" minOccurs="1" maxOccurs="unbounded" />
+    </xs:sequence>
   </xs:complexType>
 
   <xs:complexType name="objSettings">

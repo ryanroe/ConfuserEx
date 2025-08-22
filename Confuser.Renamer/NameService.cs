@@ -69,6 +69,9 @@ namespace Confuser.Renamer {
 		readonly Dictionary<string, string> _prefixesMap = new Dictionary<string, string>();
 		internal ReversibleRenamer reversibleRenamer;
 
+		MeaningfulWordsConfig meaningfulWordsConfig;
+		MeaningfulWordsGenerator meaningfulWordsGenerator;
+
 		public NameService(ConfuserContext context) {
 			this.context = context;
 			storage = new VTableStorage(context.Logger);
@@ -183,6 +186,8 @@ namespace Confuser.Renamer {
 					return "_" + Utils.EncodeString(hash, alphaNumCharset);
 				case RenameMode.Sequential:
 					return "_" + GetNextSequentialName();
+				case RenameMode.MeaningfulWords:
+					return GetMeaningfulName();
 				default:
 					throw new NotSupportedException("Rename mode '" + mode + "' is not supported.");
 			}
@@ -250,14 +255,16 @@ namespace Confuser.Renamer {
 					}
 
 					if (!identifiers.Contains(MakeGenericName(newName, genericParamsCount))
-					    && !_obfuscatedToOriginalNameMap.ContainsKey(newName))
+						&& !_obfuscatedToOriginalNameMap.ContainsKey(newName))
 						break;
 					hash = Utils.SHA1(hash);
 				}
 
-				if (mode == RenameMode.Decodable || mode == RenameMode.Sequential) {
+				if (mode == RenameMode.Decodable || mode == RenameMode.Sequential || mode == RenameMode.MeaningfulWords) {
 					_obfuscatedToOriginalNameMap.Add(newName, name);
 					_originalToObfuscatedNameMap.Add(name, newName);
+					// Add the generated name to reserved identifiers to prevent conflicts
+					identifiers.Add(newName);
 				}
 			}
 
@@ -329,17 +336,17 @@ namespace Confuser.Renamer {
 
 		static readonly char[] asciiCharset = Enumerable.Range(32, 95)
 			.Select(ord => (char)ord)
-			.Except(new[] {'.'})
+			.Except(new[] { '.' })
 			.ToArray();
 
-		static readonly char[] reflectionCharset = asciiCharset.Except(new[] {' ', '[', ']'}).ToArray();
+		static readonly char[] reflectionCharset = asciiCharset.Except(new[] { ' ', '[', ']' }).ToArray();
 
 		static readonly char[] letterCharset = Enumerable.Range(0, 26)
-			.SelectMany(ord => new[] {(char)('a' + ord), (char)('A' + ord)})
+			.SelectMany(ord => new[] { (char)('a' + ord), (char)('A' + ord) })
 			.ToArray();
 
 		static readonly char[] alphaNumCharset = Enumerable.Range(0, 26)
-			.SelectMany(ord => new[] {(char)('a' + ord), (char)('A' + ord)})
+			.SelectMany(ord => new[] { (char)('a' + ord), (char)('A' + ord) })
 			.Concat(Enumerable.Range(0, 10).Select(ord => (char)('0' + ord)))
 			.ToArray();
 
@@ -349,7 +356,7 @@ namespace Confuser.Renamer {
 			.Concat(Enumerable.Range(0x200b, 5).Select(ord => (char)ord))
 			.Concat(Enumerable.Range(0x2029, 6).Select(ord => (char)ord))
 			.Concat(Enumerable.Range(0x206a, 6).Select(ord => (char)ord))
-			.Except(new[] {'\u2029'})
+			.Except(new[] { '\u2029' })
 			.ToArray();
 
 		#endregion
@@ -376,8 +383,8 @@ namespace Confuser.Renamer {
 
 		DisplayNormalizedName ExtractDisplayNormalizedName(IDnlibDef dnlibDef, bool forceShortNames = false) {
 			var shortNames = forceShortNames ||
-			                 GetParam(dnlibDef, "shortNames")?.Equals("true", StringComparison.OrdinalIgnoreCase) ==
-			                 true;
+							 GetParam(dnlibDef, "shortNames")?.Equals("true", StringComparison.OrdinalIgnoreCase) ==
+							 true;
 			var renameMode = GetRenameMode(dnlibDef);
 
 			if (dnlibDef is TypeDef typeDef) {
@@ -429,12 +436,9 @@ namespace Confuser.Renamer {
 				shortNames ? dnlibDef.Name.ToString() : normalizedNameBuilder.ToString());
 		}
 
-		DisplayNormalizedName CompressTypeName(string typeName, RenameMode renameMode)
-		{
-			if (renameMode == RenameMode.Reversible)
-			{
-				if (!_prefixesMap.TryGetValue(typeName, out string prefix))
-				{
+		DisplayNormalizedName CompressTypeName(string typeName, RenameMode renameMode) {
+			if (renameMode == RenameMode.Reversible) {
+				if (!_prefixesMap.TryGetValue(typeName, out string prefix)) {
 					_prefixesMap.Add(typeName, GetNextSequentialName());
 				}
 
@@ -453,6 +457,82 @@ namespace Confuser.Renamer {
 				_nameBuilder.Append(alphaNumCharset[remainder]);
 			} while (number != 0);
 			return _nameBuilder.ToString();
+		}
+
+		string GetMeaningfulName() {
+			EnsureMeaningfulWordsInitialized();
+			return meaningfulWordsGenerator.GenerateUniqueName(identifiers);
+		}
+
+		void EnsureMeaningfulWordsInitialized() {
+			if (meaningfulWordsGenerator == null) {
+				// Try to get configuration from context/project
+				meaningfulWordsConfig = GetMeaningfulWordsConfig();
+				meaningfulWordsGenerator = new MeaningfulWordsGenerator(meaningfulWordsConfig, random);
+			}
+		}
+
+		MeaningfulWordsConfig GetMeaningfulWordsConfig() {
+			var config = new MeaningfulWordsConfig();
+
+			// Try to get word list file path from parameters
+			string wordListFile = null;
+
+			// Look for module-level configuration first
+			if (context.CurrentModule != null) {
+				wordListFile = GetParam(context.CurrentModule, "meaningfulWordsFile");
+			}
+
+			// Try to load from specified file
+			if (!string.IsNullOrEmpty(wordListFile)) {
+				try {
+					if (LoadMeaningfulWordsFromFile(config, wordListFile)) {
+						return config;
+					}
+				}
+				catch (Exception ex) {
+					context.Logger.WarnFormat("Failed to load meaningful words from file '{0}': {1}", wordListFile, ex.Message);
+				}
+			}
+
+			// Try to load from inline XML configuration in parameters
+			var meaningfulWordsXml = GetParam(context.CurrentModule, "meaningfulWords");
+			if (!string.IsNullOrEmpty(meaningfulWordsXml)) {
+				try {
+					var doc = new System.Xml.XmlDocument();
+					doc.LoadXml(meaningfulWordsXml);
+					config.LoadFromXml(doc.DocumentElement);
+					return config;
+				}
+				catch (Exception ex) {
+					context.Logger.WarnFormat("Failed to parse meaningful words XML configuration: {0}", ex.Message);
+				}
+			}
+
+			// Fall back to defaults
+			config.SetDefaultWords();
+
+			return config;
+		}
+
+		bool LoadMeaningfulWordsFromFile(MeaningfulWordsConfig config, string filePath) {
+			// Handle relative paths
+			if (!System.IO.Path.IsPathRooted(filePath)) {
+				if (context.CurrentModule != null && !string.IsNullOrEmpty(context.BaseDirectory)) {
+					filePath = System.IO.Path.Combine(context.BaseDirectory, filePath);
+				}
+			}
+
+			if (!System.IO.File.Exists(filePath)) {
+				context.Logger.WarnFormat("Meaningful words file not found: {0}", filePath);
+				return false;
+			}
+
+			var doc = new System.Xml.XmlDocument();
+			doc.Load(filePath);
+
+			config.LoadFromXml(doc.DocumentElement);
+			return true;
 		}
 	}
 }

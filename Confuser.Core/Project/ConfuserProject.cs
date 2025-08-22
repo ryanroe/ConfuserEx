@@ -217,7 +217,7 @@ namespace Confuser.Core.Project {
 				SNPubSigKeyPath = elem.Attributes["snPubSigKey"].Value.NullIfEmpty();
 			else
 				SNPubSigKeyPath = null;
-			
+
 			Rules.Clear();
 			foreach (XmlElement i in elem.ChildNodes.OfType<XmlElement>()) {
 				var rule = new Rule();
@@ -322,9 +322,18 @@ namespace Confuser.Core.Project {
 				XmlAttribute nameAttr = xmlDoc.CreateAttribute("name");
 				nameAttr.Value = i.Key;
 				arg.Attributes.Append(nameAttr);
-				XmlAttribute valAttr = xmlDoc.CreateAttribute("value");
-				valAttr.Value = i.Value;
-				arg.Attributes.Append(valAttr);
+
+				// Check if value contains XML content
+				if (i.Value.StartsWith("<") && i.Value.EndsWith(">")) {
+					// Insert XML content directly
+					arg.InnerXml = i.Value;
+				}
+				else {
+					// Use regular value attribute
+					XmlAttribute valAttr = xmlDoc.CreateAttribute("value");
+					valAttr.Value = i.Value;
+					arg.Attributes.Append(valAttr);
+				}
 
 				elem.AppendChild(arg);
 			}
@@ -345,8 +354,21 @@ namespace Confuser.Core.Project {
 				Action = SettingItemAction.Add;
 
 			Clear();
-			foreach (XmlElement i in elem.ChildNodes.OfType<XmlElement>())
-				Add(i.Attributes["name"].Value, i.Attributes["value"].Value);
+			foreach (XmlElement i in elem.ChildNodes.OfType<XmlElement>()) {
+				string name = i.Attributes["name"].Value;
+				string value;
+
+				// Handle inline XML content for complex arguments (e.g., meaningfulWords)
+				if (i.Attributes["value"] != null) {
+					value = i.Attributes["value"].Value;
+				}
+				else {
+					// Use inner XML as value when no value attribute is present
+					value = i.InnerXml;
+				}
+
+				Add(name, value);
+			}
 		}
 
 		/// <summary>
